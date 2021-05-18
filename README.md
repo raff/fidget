@@ -94,16 +94,18 @@ Note that while `onConnect` will accept all the conditions above, the only ones 
     mitm=true               // enable sniffing HTTPS requests on all requests
                             // use onConnect { action = "mitm" } to selectively enable for certain hosts
 
-    onConnect {             // reject requests to https://bad.host.com/
+    onConnect {             // reject HTTPS requests to https://bad.host.com/
       conditions = {hostIs: "bad.host.com:443"}
       action = "reject"
     }
 
-    onRequest {             // for all incoming requests, add "X-Proxied-By"
-        setHeaders = {"X-Proxied-By": "gogo-proxy"}
-    }
+    onRequest {             // for all outgoing requests, add "X-Proxied-By" before forwarding
+        request {
+            setHeaders = {"X-Proxied-By": "gogo-proxy"}
+        }
+   }
 
-    onResponse {            // for all outgoing responses, remove "X-Proxied-By"
+    onResponse {            // for all incoming  responses, remove "X-Proxied-By"
         delHeaders = ["X-Proxied-By"]
     }
 
