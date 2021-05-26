@@ -2,12 +2,15 @@ package main
 
 import (
 	"bytes"
+        "fmt"
 	"io/ioutil"
 	"log"
 	"net/http"
+	"net/url"
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/elazarl/goproxy"
 	"github.com/hashicorp/hcl/v2/hclsimple"
@@ -38,6 +41,8 @@ type Request struct {
 }
 
 type RequestConfig struct {
+	Query string `hcl:"query,optional"`
+
 	SetHeaders Header   `hcl:"setHeaders,optional"`
 	AddHeaders Header   `hcl:"addHeaders,optional"`
 	DelHeaders []string `hcl:"delHeaders,optional"`
@@ -64,6 +69,10 @@ type Response struct {
 }
 
 type Header map[string]string
+
+type Context struct {
+	Start time.Time
+}
 
 type HeaderUpdater interface {
 	UpdateHeaders(ctx *goproxy.ProxyCtx, h http.Header)
@@ -134,7 +143,7 @@ func (c *Config) NewProxy() (*goproxy.ProxyHttpServer, error) {
 		proxy.OnRequest().HandleConnectFunc(
 			func(host string, ctx *goproxy.ProxyCtx) (ret *goproxy.ConnectAction, h string) {
 				ctx.Logf("CONNECT %v", host)
-				return nil, host    // here we just want to log the connect
+				return nil, host // here we just want to log the connect
 			})
 
 		proxy.OnRequest().DoFunc(
@@ -144,15 +153,22 @@ func (c *Config) NewProxy() (*goproxy.ProxyHttpServer, error) {
 					ctx.Logf(" %v: %v", k, v)
 				}
 
+				ctx.UserData = Context{Start: time.Now()}
 				return r, nil
 			})
 
 		proxy.OnResponse().DoFunc(
 			func(r *http.Response, ctx *goproxy.ProxyCtx) *http.Response {
-				ctx.Logf("RESPONSE %v %v", r.Proto, r.Status)
+				elapsed := ""
+				if c, ok := ctx.UserData.(Context); ok {
+					elapsed = fmt.Sprintf(" secs=%v", time.Since(c.Start).Truncate(time.Millisecond))
+				}
+
+				ctx.Logf("RESPONSE %v %v%v", r.Proto, r.Status, elapsed)
 				for k, v := range r.Header {
 					ctx.Logf(" %v: %v", k, v)
 				}
+
 				return r
 			})
 	}
@@ -313,6 +329,11 @@ func (c *Config) NewProxy() (*goproxy.ProxyHttpServer, error) {
 
 				if creq.ReqVals != nil {
 					creq.ReqVals.UpdateHeaders(ctx, req.Header)
+
+					if creq.ReqVals.Query != "" {
+						ctx.Logf("  REQUEST QUERY %v", creq.ReqVals.Query)
+						req.URL.RawQuery = url.QueryEscape(creq.ReqVals.Query)
+					}
 				}
 
 				if creq.RespVals != nil {
@@ -387,6 +408,9 @@ func (c *Config) NewProxy() (*goproxy.ProxyHttpServer, error) {
 			case "contentTypeIs":
 				cond = goproxy.ContentTypeIs(cval)
 
+			case "hasHeader":
+				cond = hasHeader(cval)
+
 			default:
 				log.Fatalf("[CONFIG] onResponse %v - invalid condition %v\n", i, ccond)
 			}
@@ -435,5 +459,12 @@ func reqMethodIs(method string) goproxy.ReqConditionFunc {
 func notResp(r goproxy.RespCondition) goproxy.RespConditionFunc {
 	return func(resp *http.Response, ctx *goproxy.ProxyCtx) bool {
 		return !r.HandleResp(resp, ctx)
+	}
+}
+
+func hasHeader(h string) goproxy.RespConditionFunc {
+	return func(resp *http.Response, ctx *goproxy.ProxyCtx) bool {
+		_, ok := resp.Header[h]
+		return ok
 	}
 }

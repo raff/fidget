@@ -54,6 +54,7 @@ Note that while `onConnect` will accept all the conditions above, the only ones 
 
     statusIs: status               // HTTP response status code is status
     contentTypeIs: contentType     // response content type is contentType
+    hasHeader: headerName          // response has header named headerName
 
 ### Available onConnect actions
 
@@ -64,6 +65,8 @@ Note that while `onConnect` will accept all the conditions above, the only ones 
 ### Available onRequest actions
 
     request {                     // modify incoming request, before sending
+      setQuery   = "query string"
+
       setHeaders = {name: value, ...}
       addHeaders = {name: value, ...}
       delHeaders = [name, ...]
